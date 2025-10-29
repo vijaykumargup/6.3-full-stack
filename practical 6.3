@@ -1,0 +1,129 @@
+// =======================================================
+// ?? Secure Money Transfer API (Without Transactions)
+// =======================================================
+
+const express = require("express");
+const mongoose = require("mongoose");
+
+const app = express();
+app.use(express.json());
+
+// -------------------------------------------------------
+// ?? MongoDB Connection
+// -------------------------------------------------------
+mongoose.connect("mongodb+srv://<username>:<password>@<cluster>.mongodb.net/bankDB", {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log("? MongoDB Connected Successfully"))
+.catch(err => console.error("? Database Connection Failed:", err));
+
+// -------------------------------------------------------
+// ?? Account Schema & Model
+// -------------------------------------------------------
+const accountSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  balance: { type: Number, required: true, min: 0 }
+});
+
+const Account = mongoose.model("Account", accountSchema);
+
+// -------------------------------------------------------
+// ?? Middleware: Log each API request
+// -------------------------------------------------------
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+// -------------------------------------------------------
+// ?? API: Create New Account
+// -------------------------------------------------------
+app.post("/accounts", async (req, res) => {
+  try {
+    const { name, balance } = req.body;
+    const account = new Account({ name, balance });
+    await account.save();
+    res.status(201).json({ message: "Account created", account });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------
+// ?? API: Get All Accounts
+// -------------------------------------------------------
+app.get("/accounts", async (req, res) => {
+  const accounts = await Account.find();
+  res.json(accounts);
+});
+
+// -------------------------------------------------------
+// ?? API: Money Transfer (Without Transactions)
+// -------------------------------------------------------
+app.post("/transfer", async (req, res) => {
+  const { from, to, amount } = req.body;
+
+  if (!from || !to || !amount || amount <= 0) {
+    return res.status(400).json({ message: "Invalid transfer details" });
+  }
+
+  try {
+    // Step 1??: Fetch both accounts
+    const sender = await Account.findOne({ name: from });
+    const receiver = await Account.findOne({ name: to });
+
+    if (!sender) return res.status(404).json({ message: "Sender account not found" });
+    if (!receiver) return res.status(404).json({ message: "Receiver account not found" });
+
+    // Step 2??: Validate sufficient balance
+    if (sender.balance < amount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    // Step 3??: Deduct amount from sender
+    sender.balance -= amount;
+    await sender.save();
+
+    // Step 4??: Simulate potential issue (optional)
+    // throw new Error("Simulated error after debit!");
+
+    // Step 5??: Add amount to receiver
+    receiver.balance += amount;
+    await receiver.save();
+
+    // Step 6??: Return success response
+    res.json({
+      message: "Transfer successful",
+      from: sender.name,
+      to: receiver.name,
+      amount,
+      senderNewBalance: sender.balance,
+      receiverNewBalance: receiver.balance
+    });
+
+  } catch (err) {
+    // Step 7??: Handle any failure after partial update
+    console.error("? Transfer Error:", err.message);
+    res.status(500).json({ message: "Transfer failed", error: err.message });
+  }
+});
+
+// -------------------------------------------------------
+// ?? API: Check Single Account Balance
+// -------------------------------------------------------
+app.get("/accounts/:name", async (req, res) => {
+  try {
+    const account = await Account.findOne({ name: req.params.name });
+    if (!account) return res.status(404).json({ message: "Account not found" });
+    res.json(account);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------
+// ?? Start Server
+// -------------------------------------------------------
+const PORT = 3000;
+app.listen(PORT, () => console.log(`?? Server running on http://localhost:${PORT}`));
